@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -28,6 +28,7 @@ import {
   ExternalLink,
 } from "lucide-react"
 import Link from "next/link"
+import { db } from '@/lib/supabase'
 
 // Data and functions specific to Investor Search
 const industries = [
@@ -96,53 +97,6 @@ const geographicFocus = [
   "Africa",
   "Oceania",
 ]
-const investorResults = [
-  {
-    id: 101,
-    name: "Sequoia Capital",
-    description: "Early and growth-stage venture capital firm",
-    type: "Venture Capital",
-    aum: "$85B",
-    industry: "Multi-sector",
-    location: "Menlo Park, CA",
-    investments: 1500,
-    founded: "1972",
-    focus: ["SaaS", "Fintech", "AI/ML", "Consumer"],
-    checkSize: { range: "$1M - $50M", sweetSpot: "$10M" },
-    matchScore: 97,
-    logo: "/placeholder.svg?height=40&width=40",
-  },
-  {
-    id: 102,
-    name: "Andreessen Horowitz",
-    description: "Stage-agnostic venture capital firm",
-    type: "Venture Capital",
-    aum: "$35B",
-    industry: "Multi-sector",
-    location: "Menlo Park, CA",
-    investments: 850,
-    founded: "2009",
-    focus: ["Crypto", "Fintech", "Enterprise", "Consumer"],
-    checkSize: { range: "$500K - $100M", sweetSpot: "$25M" },
-    matchScore: 92,
-    logo: "/placeholder.svg?height=40&width=40",
-  },
-  {
-    id: 103,
-    name: "Y Combinator",
-    description: "Seed-stage startup accelerator",
-    type: "Accelerator",
-    aum: "$7.5B",
-    industry: "Multi-sector",
-    location: "Mountain View, CA",
-    investments: 3500,
-    founded: "2005",
-    focus: ["Early-stage", "SaaS", "Consumer", "Marketplace"],
-    checkSize: { range: "$250K - $2M", sweetSpot: "$500K" },
-    matchScore: 88,
-    logo: "/placeholder.svg?height=40&width=40",
-  },
-]
 
 export default function InvestorsSearchPage() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -159,6 +113,10 @@ export default function InvestorsSearchPage() {
   const [locationOpen, setLocationOpen] = useState(false)
   const [geographicFocusOpen, setGeographicFocusOpen] = useState(false)
   const [industryFocusOpen, setIndustryFocusOpen] = useState(false)
+
+  const [investors, setInvestors] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const toggleSelection = (item: string, selectedItems: string[], setSelectedItems: (items: string[]) => void) => {
     if (selectedItems.includes(item)) {
@@ -409,6 +367,47 @@ export default function InvestorsSearchPage() {
     </div>
   )
 
+  useEffect(() => {
+    async function fetchInvestors() {
+      setLoading(true)
+      setError(null)
+      const { data, error } = await db.investmentFirms.getAll()
+      if (error) setError(error.message)
+      setInvestors(data || [])
+      setLoading(false)
+    }
+    fetchInvestors()
+  }, [])
+
+  // Filtering and searching logic for fetched investors
+  const filteredInvestors = investors.filter((investor) => {
+    // Search by name or description
+    const matchesSearch = !searchTerm ||
+      investor.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      investor.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      investor.full_description?.toLowerCase().includes(searchTerm.toLowerCase())
+
+    // Filter by investor type
+    const matchesType = selectedInvestorTypes.length === 0 ||
+      (investor.firm_type && selectedInvestorTypes.includes(investor.firm_type))
+
+    // Filter by location
+    const matchesLocation = selectedLocations.length === 0 ||
+      (investor.location && selectedLocations.includes(investor.location))
+
+    // Filter by industry focus
+    const matchesIndustry = selectedIndustries.length === 0 ||
+      (Array.isArray(investor.focus_industries) && investor.focus_industries.some((ind: string) => selectedIndustries.includes(ind)))
+
+    // Filter by investment stage
+    const matchesStage = selectedInvestmentStages.length === 0 ||
+      (Array.isArray(investor.investment_stages) && investor.investment_stages.some((stage: string) => selectedInvestmentStages.includes(stage)))
+
+    // You can add more filters here (AUM, check size, etc.)
+
+    return matchesSearch && matchesType && matchesLocation && matchesIndustry && matchesStage
+  })
+
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
@@ -504,92 +503,99 @@ export default function InvestorsSearchPage() {
       {/* Search Results */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <p className="text-gray-600">{investorResults.length} investors found</p>
+          <p className="text-gray-600">{filteredInvestors.length} investors found</p>
         </div>
-        <div className="space-y-4">
-          {investorResults.map((investor) => (
-            <Card key={investor.id} className="hover:shadow-lg transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-start sm:justify-between gap-4">
-                  <div className="flex items-center gap-3 mb-2 sm:mb-0 flex-shrink-0">
-                    <img
-                      src={investor.logo || "/placeholder.svg"}
-                      alt={`${investor.name} logo`}
-                      className="w-10 h-10 rounded-md object-cover bg-gray-100"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Link
-                        href={`/investors/${investor.id}`}
-                        className="text-xl font-bold hover:text-blue-600 truncate"
-                      >
-                        {investor.name}
-                      </Link>
-                      <Badge variant="secondary" className="whitespace-nowrap">
-                        {investor.matchScore}% match
-                      </Badge>
+        {loading ? (
+          <div className="text-center py-12">
+            <p>Loading investors...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <p className="text-red-600">{error}</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredInvestors.map((investor) => (
+              <Card key={investor.id} className="hover:shadow-lg transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-start sm:justify-between gap-4">
+                    <div className="flex items-center gap-3 mb-2 sm:mb-0 flex-shrink-0">
+                      <img
+                        src={investor.logo_url || "/placeholder.svg"}
+                        alt={`${investor.name} logo`}
+                        className="w-10 h-10 rounded-md object-cover bg-gray-100"
+                      />
                     </div>
-                    <p className="text-gray-600 mb-3 line-clamp-2">{investor.description}</p>
-                    <div className="grid md:grid-cols-2 gap-x-4 gap-y-2 mb-4">
-                      <div className="flex items-center gap-2">
-                        <Briefcase className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm truncate">
-                          {investor.type} • {investor.aum} AUM
-                        </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-2">
+                        <Link
+                          href={`/investors/${investor.id}`}
+                          className="text-xl font-bold hover:text-blue-600 truncate"
+                        >
+                          {investor.name}
+                        </Link>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm truncate">{investor.location}</span>
+                      <p className="text-gray-600 mb-3 line-clamp-2">{investor.description || investor.full_description}</p>
+                      <div className="grid md:grid-cols-2 gap-x-4 gap-y-2 mb-4">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm truncate">
+                            {investor.firm_type} • {investor.aum_amount || 'N/A'} AUM
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm truncate">{investor.location}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm">Check: {investor.check_size_min && investor.check_size_max ? `$${(investor.check_size_min/1000000).toLocaleString()}M - $${(investor.check_size_max/1000000).toLocaleString()}M` : 'N/A'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Building className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm">{investor.portfolio_count || 0} investments</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm">Founded {investor.founded_year || 'N/A'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Target className="w-4 h-4 text-green-600" />
+                          <span className="text-sm text-green-600 font-medium">
+                            Sweet spot: {investor.check_size_sweet_spot ? `$${(investor.check_size_sweet_spot/1000000).toLocaleString()}M` : 'N/A'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm">Check: {investor.checkSize.range}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Building className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm">{investor.investments} investments</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm">Founded {investor.founded}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Target className="w-4 h-4 text-green-600" />
-                        <span className="text-sm text-green-600 font-medium">
-                          Sweet spot: {investor.checkSize.sweetSpot}
-                        </span>
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Investment Focus:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {(investor.focus_industries || []).map((area: string, index: number) => (
+                            <Badge key={index} variant="outline">
+                              {area}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Investment Focus:</div>
-                      <div className="flex flex-wrap gap-1">
-                        {investor.focus.map((area, index) => (
-                          <Badge key={index} variant="outline">
-                            {area}
-                          </Badge>
-                        ))}
-                      </div>
+                    <div className="flex flex-row sm:flex-col gap-2 sm:ml-4 w-full sm:w-auto items-stretch">
+                      <Button variant="outline" size="sm" className="w-full sm:w-auto">
+                        <Bell className="w-4 h-4" />
+                      </Button>
+                      <Button variant="outline" size="sm" className="w-full sm:w-auto">
+                        <Bookmark className="w-4 h-4" />
+                      </Button>
+                      <Button asChild size="sm" className="w-full sm:w-auto">
+                        <Link href={`/investors/${investor.id}`}>
+                          <ExternalLink className="w-4 h-4" />
+                        </Link>
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex flex-row sm:flex-col gap-2 sm:ml-4 w-full sm:w-auto items-stretch">
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
-                      <Bell className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
-                      <Bookmark className="w-4 h-4" />
-                    </Button>
-                    <Button asChild size="sm" className="w-full sm:w-auto">
-                      <Link href={`/investors/${investor.id}`}>
-                        <ExternalLink className="w-4 h-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
         {/* Pagination */}
         <div className="flex items-center justify-center gap-2 pt-6">
           <Button variant="outline" disabled>
