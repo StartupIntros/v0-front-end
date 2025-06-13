@@ -24,8 +24,11 @@ import {
   Bell,
   Download,
   ExternalLink,
+  Search,
+  Loader2,
 } from "lucide-react"
 import Link from "next/link"
+import { StartupCard, useStartups } from '@/components/StartupCard'
 
 // Data and functions specific to Startup Search
 const industries = [
@@ -116,365 +119,154 @@ const startupResults = [
   },
 ]
 
-export default function StartupsSearchPage() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [fundingRange, setFundingRange] = useState([0, 100])
-  const [teamSizeRange, setTeamSizeRange] = useState([1, 500])
-  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([])
-  const [selectedFundingStages, setSelectedFundingStages] = useState<string[]>([])
-  const [selectedLocations, setSelectedLocations] = useState<string[]>([])
-  const [industryOpen, setIndustryOpen] = useState(false)
-  const [fundingStageOpen, setFundingStageOpen] = useState(false)
-  const [locationOpen, setLocationOpen] = useState(false)
+export default function StartupsPage() {
+  const { startups, loading, error } = useStartups()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedIndustry, setSelectedIndustry] = useState('')
+  const [selectedStage, setSelectedStage] = useState('')
 
-  const toggleSelection = (item: string, selectedItems: string[], setSelectedItems: (items: string[]) => void) => {
-    if (selectedItems.includes(item)) {
-      setSelectedItems(selectedItems.filter((i) => i !== item))
-    } else {
-      setSelectedItems([...selectedItems, item])
-    }
+  // Get unique industries and stages for filters
+  const industries = [...new Set(startups.map(s => s.industry).filter((industry): industry is string => industry !== null))]
+  const stages = [...new Set(startups.map(s => s.stage))]
+
+  // Filter startups based on search and filters
+  const filteredStartups = startups.filter(startup => {
+    const matchesSearch = !searchQuery || 
+      startup.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      startup.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      startup.tagline?.toLowerCase().includes(searchQuery.toLowerCase())
+    
+    const matchesIndustry = selectedIndustry === 'all' || !selectedIndustry || startup.industry === selectedIndustry
+    const matchesStage = selectedStage === 'all' || !selectedStage || startup.stage === selectedStage
+    
+    return matchesSearch && matchesIndustry && matchesStage
+  })
+
+  const handleStartupClick = (startup: any) => {
+    // Navigate to startup detail page
+    const slug = startup.profile_slug || startup.id.toString()
+    window.location.href = `/startup/${slug}`
   }
 
-  const removeSelection = (item: string, selectedItems: string[], setSelectedItems: (items: string[]) => void) => {
-    setSelectedItems(selectedItems.filter((i) => i !== item))
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin" />
+          <span className="ml-2">Loading startups...</span>
+        </div>
+      </div>
+    )
   }
 
-  const activeFiltersCount = selectedIndustries.length + selectedFundingStages.length + selectedLocations.length
-
-  const renderFilters = () => (
-    <div className="space-y-6">
-      {/* Location */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Location</label>
-        <Popover open={locationOpen} onOpenChange={setLocationOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" role="combobox" aria-expanded={locationOpen} className="w-full justify-between">
-              {selectedLocations.length === 0 ? "Select" : `${selectedLocations.length} selected`}
-              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-full p-0">
-            <Command>
-              <CommandInput placeholder="Search locations..." />
-              <CommandList>
-                <CommandEmpty>No location found.</CommandEmpty>
-                <CommandGroup className="max-h-64 overflow-auto">
-                  {locations.map((location) => (
-                    <CommandItem
-                      key={location}
-                      onSelect={() => toggleSelection(location, selectedLocations, setSelectedLocations)}
-                    >
-                      <Check
-                        className={`mr-2 h-4 w-4 ${selectedLocations.includes(location) ? "opacity-100" : "opacity-0"}`}
-                      />
-                      {location}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {/* Industry */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Industry</label>
-        <Popover open={industryOpen} onOpenChange={setIndustryOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" role="combobox" aria-expanded={industryOpen} className="w-full justify-between">
-              {selectedIndustries.length === 0 ? "Select" : `${selectedIndustries.length} selected`}
-              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-full p-0">
-            <Command>
-              <CommandInput placeholder="Search industries..." />
-              <CommandList>
-                <CommandEmpty>No industry found.</CommandEmpty>
-                <CommandGroup className="max-h-64 overflow-auto">
-                  {industries.map((industry) => (
-                    <CommandItem
-                      key={industry}
-                      onSelect={() => toggleSelection(industry, selectedIndustries, setSelectedIndustries)}
-                    >
-                      <Check
-                        className={`mr-2 h-4 w-4 ${selectedIndustries.includes(industry) ? "opacity-100" : "opacity-0"}`}
-                      />
-                      {industry}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {/* Funding Stage */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Funding Stage</label>
-        <Popover open={fundingStageOpen} onOpenChange={setFundingStageOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={fundingStageOpen}
-              className="w-full justify-between"
-            >
-              {selectedFundingStages.length === 0 ? "Select" : `${selectedFundingStages.length} selected`}
-              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-full p-0">
-            <Command>
-              <CommandInput placeholder="Search stages..." />
-              <CommandList>
-                <CommandEmpty>No stage found.</CommandEmpty>
-                <CommandGroup>
-                  {fundingStages.map((stage) => (
-                    <CommandItem
-                      key={stage}
-                      onSelect={() => toggleSelection(stage, selectedFundingStages, setSelectedFundingStages)}
-                    >
-                      <Check
-                        className={`mr-2 h-4 w-4 ${selectedFundingStages.includes(stage) ? "opacity-100" : "opacity-0"}`}
-                      />
-                      {stage}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {/* Funding Range */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium">Funding Range ($M)</label>
-        <div className="px-1 py-2">
-          <Slider value={fundingRange} onValueChange={setFundingRange} max={100} min={0} step={1} className="w-full" />
-          <div className="flex justify-between text-xs text-gray-600 mt-2 font-medium">
-            <span>${fundingRange[0]}M</span>
-            <span>${fundingRange[1] >= 100 ? "100M+" : `${fundingRange[1]}M`}</span>
-          </div>
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600">Error Loading Startups</h1>
+          <p className="text-muted-foreground mt-2">{error}</p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="mt-4"
+          >
+            Try Again
+          </Button>
         </div>
       </div>
-
-      {/* Team Size */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium">Team Size</label>
-        <div className="px-1 py-2">
-          <Slider
-            value={teamSizeRange}
-            onValueChange={setTeamSizeRange}
-            max={500}
-            min={1}
-            step={5}
-            className="w-full"
-          />
-          <div className="flex justify-between text-xs text-gray-600 mt-2 font-medium">
-            <span>{teamSizeRange[0]}</span>
-            <span>{teamSizeRange[1] >= 500 ? "500+" : teamSizeRange[1]}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+    )
+  }
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Startups</h1>
-          <p className="text-muted-foreground mt-1">Find startups with precision filters.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline">
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </Button>
-          <Button variant="outline">
-            <Bookmark className="w-4 h-4 mr-2" />
-            Save
-          </Button>
-          <Button variant="outline">Saved Searches (3)</Button>
-        </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2">Startups</h1>
+        <p className="text-muted-foreground">
+          Discover innovative startups and connect with founders
+        </p>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-card rounded-lg border">
-        <div className="relative flex-grow w-full">
-          <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-          <Input
-            placeholder="Company name, description..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 w-full"
-          />
+      {/* Search and Filters */}
+      <div className="mb-6 space-y-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              placeholder="Search startups..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          
+          <Select value={selectedIndustry} onValueChange={setSelectedIndustry}>
+            <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectValue placeholder="All Industries" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Industries</SelectItem>
+              {industries.map(industry => (
+                <SelectItem key={industry} value={industry}>
+                  {industry}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Select value={selectedStage} onValueChange={setSelectedStage}>
+            <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectValue placeholder="All Stages" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stages</SelectItem>
+              {stages.map(stage => (
+                <SelectItem key={stage} value={stage}>
+                  {stage}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button variant="outline" className="w-full sm:w-auto shrink-0">
-              <Filter className="w-4 h-4 mr-2" />
-              Filters
-              {activeFiltersCount > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {activeFiltersCount}
-                </Badge>
-              )}
+        
+        {(searchQuery || selectedIndustry !== 'all' || selectedStage !== 'all') && (
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              Showing {filteredStartups.length} of {startups.length} startups
+            </span>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => {
+                setSearchQuery('')
+                setSelectedIndustry('all')
+                setSelectedStage('all')
+              }}
+            >
+              Clear filters
             </Button>
-          </SheetTrigger>
-          <SheetContent className="w-full sm:w-[400px] sm:max-w-none">
-            <SheetHeader>
-              <SheetTitle>Search Filters</SheetTitle>
-            </SheetHeader>
-            <div className="py-6 overflow-y-auto h-[calc(100vh-150px)] pr-6">{renderFilters()}</div>
-            <SheetFooter className="pr-6">
-              <Button className="w-full">
-                <Filter className="w-4 h-4 mr-2" />
-                Apply Filters
-              </Button>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
-
-        <Select>
-          <SelectTrigger className="w-full sm:w-48 shrink-0">
-            <SelectValue placeholder="Sort by" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="relevance">Relevance</SelectItem>
-            <SelectItem value="funding">Funding Amount</SelectItem>
-            <SelectItem value="stage">Stage</SelectItem>
-            <SelectItem value="team-size">Team Size</SelectItem>
-            <SelectItem value="founded">Founded Date</SelectItem>
-          </SelectContent>
-        </Select>
+          </div>
+        )}
       </div>
 
-      {/* Active Filters */}
-      {(selectedLocations.length > 0 || selectedIndustries.length > 0 || selectedFundingStages.length > 0) && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-sm font-medium">Active Filters:</span>
-          {selectedLocations.map((loc) => (
-            <Badge key={loc} variant="secondary" className="text-xs">
-              {loc}
-              <button
-                onClick={() => removeSelection(loc, selectedLocations, setSelectedLocations)}
-                className="ml-1 hover:text-red-500"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-          {selectedIndustries.map((ind) => (
-            <Badge key={ind} variant="secondary" className="text-xs">
-              {ind}
-              <button
-                onClick={() => removeSelection(ind, selectedIndustries, setSelectedIndustries)}
-                className="ml-1 hover:text-red-500"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-          {selectedFundingStages.map((stg) => (
-            <Badge key={stg} variant="secondary" className="text-xs">
-              {stg}
-              <button
-                onClick={() => removeSelection(stg, selectedFundingStages, setSelectedFundingStages)}
-                className="ml-1 hover:text-red-500"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
+      {/* Startups Grid */}
+      {filteredStartups.length === 0 ? (
+        <div className="text-center py-12">
+          <h3 className="text-lg font-medium mb-2">No startups found</h3>
+          <p className="text-muted-foreground">
+            Try adjusting your search criteria or filters
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredStartups.map((startup) => (
+            <StartupCard
+              key={startup.id}
+              startup={startup}
+              onClick={handleStartupClick}
+            />
           ))}
         </div>
       )}
-
-      {/* Search Results */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <p className="text-gray-600">{startupResults.length} companies found</p>
-        </div>
-        <div className="space-y-4">
-          {startupResults.map((company) => (
-            <Card key={company.id} className="hover:shadow-lg transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-start sm:justify-between gap-4">
-                  <div className="flex items-center gap-3 mb-2 sm:mb-0 flex-shrink-0">
-                    <img
-                      src={company.logo || "/placeholder.svg"}
-                      alt={`${company.name} logo`}
-                      className="w-10 h-10 rounded-md object-cover bg-gray-100"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Link href={`/startups/${company.id}`} className="text-xl font-bold hover:text-blue-600 truncate">
-                        {company.name}
-                      </Link>
-                      <Badge variant="secondary" className="whitespace-nowrap">
-                        {company.matchScore}% match
-                      </Badge>
-                    </div>
-                    <p className="text-gray-600 mb-3 line-clamp-2">{company.description}</p>
-                    <div className="grid md:grid-cols-2 gap-x-4 gap-y-2 mb-4">
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm">
-                          {company.stage} • {company.funding}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm truncate">{company.location}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm">{company.teamSize} employees</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm">Founded {company.founded}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <Badge variant="outline">{company.industry}</Badge>
-                    </div>
-                  </div>
-                  <div className="flex flex-row sm:flex-col gap-2 sm:ml-4 w-full sm:w-auto items-stretch">
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
-                      <Bell className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
-                      <Bookmark className="w-4 h-4" />
-                    </Button>
-                    <Button asChild size="sm" className="w-full sm:w-auto">
-                      <Link href={`/startups/${company.id}`}>
-                        <ExternalLink className="w-4 h-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        {/* Pagination */}
-        <div className="flex items-center justify-center gap-2 pt-6">
-          <Button variant="outline" disabled>
-            Previous
-          </Button>
-          <Button variant="outline">1</Button>
-          <Button>2</Button>
-          <Button variant="outline">3</Button>
-          <Button variant="outline">Next</Button>
-        </div>
-      </div>
     </div>
   )
 }
