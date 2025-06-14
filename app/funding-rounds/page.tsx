@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +27,7 @@ import {
   ExternalLink,
 } from "lucide-react"
 import Link from "next/link"
+import { supabase } from "@/lib/supabase"
 
 // Data and functions specific to Funding Rounds Search
 const industries = [
@@ -162,6 +163,10 @@ export default function FundingRoundsPage() {
   const [investorNameOpen, setInvestorNameOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
   const [industryOpen, setIndustryOpen] = useState(false)
+
+  const [supabaseRounds, setSupabaseRounds] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const toggleSelection = (item: string, selectedItems: string[], setSelectedItems: (items: string[]) => void) => {
     if (selectedItems.includes(item)) {
@@ -393,6 +398,71 @@ export default function FundingRoundsPage() {
     </div>
   )
 
+  useEffect(() => {
+    const fetchRounds = async () => {
+      setLoading(true);
+      setErrorMsg(null);
+      // 1. Fetch all funding rounds (no nested join for investment_firms)
+      const { data: rounds, error } = await supabase
+        .from('funding_rounds')
+        .select('*')
+        .order('announcement_date', { ascending: false });
+      // 2. Fetch all funding_round_participants
+      const { data: participants, error: participantsError } = await supabase
+        .from('funding_round_participants')
+        .select('funding_round_id, investment_firm_id');
+      // 3. Fetch all investment_firms (for names)
+      const { data: firms, error: firmsError } = await supabase
+        .from('investment_firms')
+        .select('id, name');
+      // 4. Fetch all startups (for startup info)
+      const { data: startups, error: startupsError } = await supabase
+        .from('startups')
+        .select('id, name, description, industry, location, logo_url');
+      // 5. Map the data to card format, aggregating other participants and looking up lead in JS
+      const mapped = (rounds || []).map((r: any) => {
+        // Find all participant firm IDs for this round (excluding the lead)
+        const roundParticipants = (participants || []).filter(
+          (p: any) => p.funding_round_id === r.id && p.investment_firm_id !== r.lead_investor_id
+        );
+        // Get the names for these firms
+        const participantNames = roundParticipants.map((p: any) => {
+          const firm = (firms || []).find((f: any) => f.id === p.investment_firm_id);
+          return firm?.name || null;
+        }).filter(Boolean);
+        // Lookup startup info
+        const startup = (startups || []).find((s: any) => s.id === r.startup_id);
+        // Lookup lead investor name
+        const leadFirm = (firms || []).find((f: any) => f.id === r.lead_investor_id);
+        return {
+          id: r.id,
+          company: {
+            name: startup?.name || "",
+            description: startup?.description || "",
+            industry: startup?.industry || "",
+            location: startup?.location || "",
+            logo: startup?.logo_url || "/placeholder.svg?height=40&width=40",
+          },
+          round: {
+            stage: r.round_stage || r.round_type || "",
+            amount: r.funding_amount ? `$${(r.funding_amount/1e6).toLocaleString()}M` : "—",
+            valuation: r.valuation_post ? `$${(r.valuation_post/1e6).toLocaleString()}M` : "—",
+            type: r.round_type || "",
+            announcedDate: r.announcement_date || "",
+          },
+          investors: {
+            lead: leadFirm?.name || "—",
+            participants: participantNames,
+          },
+          matchScore: null, // No match score from db
+        };
+      });
+      setSupabaseRounds(mapped);
+      setLoading(false);
+    };
+    fetchRounds();
+  }, []);
+
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
@@ -486,11 +556,14 @@ export default function FundingRoundsPage() {
 
       {/* Search Results */}
       <div className="space-y-6">
+        {errorMsg && (
+          <div className="text-red-600 font-semibold">Supabase error: {errorMsg}</div>
+        )}
         <div className="flex items-center justify-between">
-          <p className="text-gray-600">{fundingRoundsResults.length} rounds found</p>
+          <p className="text-gray-600">{loading ? "Loading..." : (supabaseRounds.length > 0 ? supabaseRounds.length : fundingRoundsResults.length)} rounds found</p>
         </div>
         <div className="space-y-4">
-          {fundingRoundsResults.map((round) => (
+          {(loading ? [] : (supabaseRounds.length > 0 ? supabaseRounds : fundingRoundsResults)).map((round) => (
             <Card key={round.id} className="hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-start sm:justify-between gap-4">
@@ -539,7 +612,12 @@ export default function FundingRoundsPage() {
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-gray-500" />
                         <span className="text-sm whitespace-nowrap">
-                          {new Date(round.round.announcedDate).toLocaleDateString()}
+                          {(() => {
+                            const d = round.round.announcedDate?.slice(0, 10);
+                            if (!d) return '—';
+                            const [year, month, day] = d.split('-');
+                            return `${month}/${day}/${year}`;
+                          })()}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -550,7 +628,7 @@ export default function FundingRoundsPage() {
                     <div className="space-y-1">
                       <div className="text-sm font-medium">Other Participants:</div>
                       <div className="flex flex-wrap gap-1">
-                        {round.investors.participants.map((p, i) => (
+                        {round.investors.participants.map((p: string, i: number) => (
                           <Badge key={i} variant="outline">
                             {p}
                           </Badge>
